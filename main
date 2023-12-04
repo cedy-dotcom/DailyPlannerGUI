@@ -1,0 +1,272 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.*;
+import java.util.*;
+
+public class DailyPlannerGUI extends JFrame {
+    private JTextArea taskTextArea = new JTextArea(10, 20);
+    private JTextField taskField = new JTextField(20);
+    private JButton[][] daysButtons = new JButton[6][7]; // Grid for days
+    private HashMap<String, String> tasksMap = new HashMap<>();
+    private int currentMonth;
+    private int currentYear;
+
+    public DailyPlannerGUI() {
+        setTitle("Daily Planner");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(800, 600);
+        setLocationRelativeTo(null);
+
+        initComponents();
+        loadTasks(); // Load tasks from file
+    }
+
+    private void initComponents() {
+        JMenuBar menuBar = new JMenuBar();
+
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem modifyTaskMenuItem = new JMenuItem("Modify Task");
+        JMenuItem deleteTaskMenuItem = new JMenuItem("Delete Task"); // Define Delete Task menu item
+
+        JMenuItem exitMenuItem = new JMenuItem("Exit");
+
+        modifyTaskMenuItem.addActionListener(new ModifyTaskListener());
+        deleteTaskMenuItem.addActionListener(new DeleteTaskListener());
+        exitMenuItem.addActionListener(e -> System.exit(0));
+
+        fileMenu.add(modifyTaskMenuItem);
+        fileMenu.add(deleteTaskMenuItem);
+        fileMenu.add(exitMenuItem);
+        menuBar.add(fileMenu);
+
+        setJMenuBar(menuBar);
+
+        JPanel panel = new JPanel(new BorderLayout());
+
+        JScrollPane scrollPane = new JScrollPane(taskTextArea);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        JPanel inputPanel = new JPanel();
+        inputPanel.add(new JLabel("Task: "));
+        inputPanel.add(taskField);
+
+        JButton addButton = new JButton("Add Task");
+        addButton.addActionListener(e -> {
+            String task = taskField.getText();
+            if (!task.isEmpty()) {
+                taskTextArea.append(task + "\n");
+                saveTasks(task); // Save task to file
+                taskField.setText(""); // Clear input field
+            } else {
+                JOptionPane.showMessageDialog(this, "Please enter a task.");
+            }
+        });
+        inputPanel.add(addButton);
+
+        panel.add(inputPanel, BorderLayout.SOUTH);
+
+        JPanel calendarPanel = new JPanel(new GridLayout(6, 7));
+
+        Calendar cal = Calendar.getInstance();
+        currentMonth = cal.get(Calendar.MONTH);
+        currentYear = cal.get(Calendar.YEAR);
+
+        JLabel monthYearLabel = new JLabel(getMonthName(currentMonth) + " " + currentYear);
+        JPanel monthYearPanel = new JPanel(new FlowLayout());
+        monthYearPanel.add(monthYearLabel);
+
+        displayMonth(cal, calendarPanel);
+
+        JButton previousMonthButton = new JButton("Previous Month");
+        previousMonthButton.addActionListener(e -> {
+            cal.add(Calendar.MONTH, -1);
+            currentMonth = cal.get(Calendar.MONTH);
+            currentYear = cal.get(Calendar.YEAR);
+            displayMonth(cal, calendarPanel);
+            monthYearLabel.setText(getMonthName(currentMonth) + " " + currentYear); // Update month and year
+        });
+
+        JButton nextMonthButton = new JButton("Next Month");
+        nextMonthButton.addActionListener(e -> {
+            cal.add(Calendar.MONTH, 1);
+            currentMonth = cal.get(Calendar.MONTH);
+            currentYear = cal.get(Calendar.YEAR);
+            displayMonth(cal, calendarPanel);
+            monthYearLabel.setText(getMonthName(currentMonth) + " " + currentYear); // Update month and year
+        });
+
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        buttonPanel.add(previousMonthButton);
+        buttonPanel.add(monthYearPanel);
+        buttonPanel.add(nextMonthButton);
+
+        panel.add(buttonPanel, BorderLayout.NORTH);
+        panel.add(calendarPanel, BorderLayout.WEST);
+
+        add(panel, BorderLayout.CENTER);
+
+        setVisible(true);
+    }
+
+    private String getMonthName(int month) {
+        String[] monthNames = {
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+        };
+        return monthNames[month];
+    }
+
+    private void displayMonth(Calendar cal, JPanel calendarPanel) {
+        cal.set(Calendar.DAY_OF_MONTH, 1);
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+
+        calendarPanel.removeAll();
+
+        int daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH);
+        int firstDayOfMonth = cal.get(Calendar.DAY_OF_WEEK);
+
+        for (int i = 1; i < firstDayOfMonth; i++) {
+            calendarPanel.add(new JLabel(""));
+        }
+
+        for (int i = 1; i <= daysInMonth; i++) {
+            JButton dayButton = new JButton(Integer.toString(i));
+            int day = i;
+            dayButton.addActionListener(e -> {
+                String date = day + "/" + (currentMonth + 1) + "/" + currentYear;
+                String inputTask = JOptionPane.showInputDialog(null, "Enter task for " + date + ":");
+                if (inputTask != null && !inputTask.isEmpty()) {
+                    taskTextArea.append("Date: " + date + " - Task: " + inputTask + "\n");
+                    tasksMap.put(date, inputTask); // Store task in the map
+                    saveTasksToFile(); // Save tasks to file
+                    dayButton.setBackground(Color.RED); // Change button color to red
+                }
+            });
+            calendarPanel.add(dayButton);
+        }
+
+        revalidate();
+        repaint();
+    }
+
+    private class ModifyTaskListener implements ActionListener {
+        public void actionPerformed(ActionEvent e) {
+            String dayToModify = JOptionPane.showInputDialog(null, "Enter the day to modify (DD/MM/YYYY):");
+            if (dayToModify != null && !dayToModify.isEmpty()) {
+                String newTask = JOptionPane.showInputDialog(null, "Enter the new task for " + dayToModify + ":");
+                if (newTask != null && !newTask.isEmpty()) {
+                    modifyTask(dayToModify, newTask);
+                }
+            }
+        }
+
+        private void modifyTask(String dayToModify, String newTask) {
+            try {
+                File file = new File("tasks.txt");
+                File tempFile = new File("temp_tasks.txt");
+
+                BufferedReader reader = new BufferedReader(new FileReader(file));
+                PrintWriter writer = new PrintWriter(new FileWriter(tempFile));
+
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("Date: " + dayToModify)) {
+                        writer.println("Date: " + dayToModify + " - Task: " + newTask);
+                    } else {
+                        writer.println(line);
+                    }
+                }
+
+                reader.close();
+                writer.close();
+
+                if (!file.delete()) {
+                    System.out.println("Could not delete the file");
+                    return;
+                }
+
+                if (!tempFile.renameTo(file)) {
+                    System.out.println("Could not rename the file");
+                }
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+            loadTasks(); // Reload tasks after modification
+        }
+    }
+
+    private class DeleteTaskListener implements ActionListener {
+        public void actionPerformed(ActionEvent e) {
+            String dayToDelete = JOptionPane.showInputDialog(null, "Enter the date to delete (DD/MM/YYYY):");
+            if (dayToDelete != null && !dayToDelete.isEmpty()) {
+                deleteTask(dayToDelete);
+            }
+        }
+
+        private void deleteTask(String dayToDelete) {
+            String taskToDelete = tasksMap.get(dayToDelete);
+            if (taskToDelete != null) {
+                tasksMap.remove(dayToDelete); // Remove the task from the map
+
+                // Remove task from text area
+                String text = taskTextArea.getText();
+                int index = text.indexOf("Date: " + dayToDelete + " - Task: " + taskToDelete);
+                if (index >= 0) {
+                    text = text.substring(0, index)
+                            + text.substring(index + ("Date: " + dayToDelete + " - Task: " + taskToDelete).length());
+                    taskTextArea.setText(text);
+                    saveTasksToFile(); // Update the file with modified tasks
+                }
+            } else {
+                JOptionPane.showMessageDialog(null, "No task found for the given date.");
+            }
+        }
+    }
+
+    private void saveTasksToFile() {
+        try (PrintWriter writer = new PrintWriter(new FileWriter("tasks.txt"))) {
+            for (Map.Entry<String, String> entry : tasksMap.entrySet()) {
+                writer.println("Date: " + entry.getKey() + " - Task: " + entry.getValue());
+            }
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void saveTasks(String task) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter("tasks.txt", true))) {
+            writer.println(task);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void loadTasks() {
+        try (BufferedReader reader = new BufferedReader(new FileReader("tasks.txt"))) {
+            String line;
+            taskTextArea.setText(""); // Clear text area before loading tasks
+            tasksMap.clear(); // Clear the tasks map before loading tasks
+
+            while ((line = reader.readLine()) != null) {
+                taskTextArea.append(line + "\n"); // Add each line to the text area
+                // Extract date and task, and put them into the tasks map
+                String[] parts = line.split(" - ", 2);
+                if (parts.length == 2) {
+                    tasksMap.put(parts[0].substring(5), parts[1]);
+                }
+            }
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            new DailyPlannerGUI();
+        });
+    }
+}
